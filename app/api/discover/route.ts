@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { discoverMoviesByGenre } from "@/lib/api";
+import { TmdbFetchError, discoverMoviesByGenre } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   const genreId = Number(request.nextUrl.searchParams.get("genreId"));
@@ -31,11 +31,15 @@ export async function GET(request: NextRequest) {
       totalPages: response.total_pages
     });
   } catch (error) {
+    const status = error instanceof TmdbFetchError
+      ? (error.status ?? 502)
+      : 502;
+
     return NextResponse.json(
       {
         message: error instanceof Error ? error.message : "Unable to discover movies."
       },
-      { status: 500 }
+      { status }
     );
   }
 }

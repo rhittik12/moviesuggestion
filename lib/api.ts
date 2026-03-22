@@ -44,6 +44,11 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "EAI_AGAIN"
 ]);
 
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const MAX_TMDB_FETCH_ATTEMPTS = 3;
+const BASE_RETRY_DELAY_MS = 250;
+const MAX_RETRY_DELAY_MS = 1600;
+
 export class TmdbFetchError extends Error {
   code?: string;
   status?: number;
@@ -88,6 +93,40 @@ function isTransientNetworkError(error: unknown) {
   return Boolean(code && TRANSIENT_NETWORK_CODES.has(code));
 }
 
+function isRetryableStatus(status: number) {
+  return RETRYABLE_STATUS_CODES.has(status);
+}
+
+function parseRetryAfterMs(retryAfter: string | null) {
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  const asSeconds = Number(retryAfter);
+
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return asSeconds * 1000;
+  }
+
+  const asDate = Date.parse(retryAfter);
+
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+
+  return undefined;
+}
+
+function getRetryDelayMs(attempt: number, retryAfterMs?: number) {
+  if (typeof retryAfterMs === "number") {
+    return Math.min(MAX_RETRY_DELAY_MS, Math.max(100, retryAfterMs));
+  }
+
+  const exponentialDelay = BASE_RETRY_DELAY_MS * (2 ** attempt);
+  const jitter = Math.floor(Math.random() * 200);
+  return Math.min(MAX_RETRY_DELAY_MS, exponentialDelay + jitter);
+}
+
 async function tmdbFetch<T>(
   endpoint: string,
   params: Record<string, string | number | undefined> = {},
@@ -107,7 +146,7 @@ async function tmdbFetch<T>(
 
   const url = `${TMDB_BASE_URL}${endpoint}?${searchParams.toString()}`;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < MAX_TMDB_FETCH_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(url, {
         cache: options.cache ?? "force-cache",
@@ -127,6 +166,11 @@ async function tmdbFetch<T>(
           });
         }
 
+        if (isRetryableStatus(response.status) && attempt < MAX_TMDB_FETCH_ATTEMPTS - 1) {
+          await wait(getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after"))));
+          continue;
+        }
+
         throw new TmdbFetchError(`TMDB request failed: ${response.status} ${response.statusText}`, {
           status: response.status
         });
@@ -138,8 +182,8 @@ async function tmdbFetch<T>(
         throw error;
       }
 
-      if (attempt === 0 && isTransientNetworkError(error)) {
-        await wait(400);
+      if (isTransientNetworkError(error) && attempt < MAX_TMDB_FETCH_ATTEMPTS - 1) {
+        await wait(getRetryDelayMs(attempt));
         continue;
       }
 

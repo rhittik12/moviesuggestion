@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { searchMovies } from "@/lib/api";
+import { TmdbFetchError, searchMovies } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("query")?.trim() || "";
@@ -31,11 +31,15 @@ export async function GET(request: NextRequest) {
       totalPages: response.total_pages
     });
   } catch (error) {
+    const status = error instanceof TmdbFetchError
+      ? (error.status ?? 502)
+      : 502;
+
     return NextResponse.json(
       {
         message: error instanceof Error ? error.message : "Unable to search movies."
       },
-      { status: 500 }
+      { status }
     );
   }
 }
