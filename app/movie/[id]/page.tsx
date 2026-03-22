@@ -66,10 +66,14 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
   const { id } = await params;
 
   try {
-    const movie = await getMovieDetails(id);
+    const moviePromise = getMovieDetails(id);
+    const recommendationsPromise = getRecommendedMovies(id);
+    const similarPromise = getSimilarMovies(id);
+
+    const movie = await moviePromise;
     const [recommendationsResult, similarResult] = await Promise.allSettled([
-      getRecommendedMovies(id),
-      getSimilarMovies(id)
+      recommendationsPromise,
+      similarPromise
     ]);
 
     const recommendations = recommendationsResult.status === "fulfilled"
