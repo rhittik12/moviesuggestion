@@ -20,6 +20,10 @@ type ApiResponse = {
   totalPages: number;
 };
 
+type ApiErrorResponse = {
+  message?: string;
+};
+
 const DEBOUNCE_MS = 450;
 
 export function SearchExperience({ genres }: SearchExperienceProps) {
@@ -69,7 +73,19 @@ export function SearchExperience({ genres }: SearchExperienceProps) {
         });
 
         if (!response.ok) {
-          throw new Error("Unable to fetch movies right now.");
+          let message = "Unable to fetch movies right now.";
+
+          try {
+            const errorPayload = (await response.json()) as ApiErrorResponse;
+
+            if (errorPayload?.message) {
+              message = errorPayload.message;
+            }
+          } catch {
+            // Ignore JSON parse errors and use fallback message.
+          }
+
+          throw new Error(message);
         }
 
         const data = (await response.json()) as ApiResponse;

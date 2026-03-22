@@ -66,13 +66,23 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
   const { id } = await params;
 
   try {
-    const [movie, recommendations, similar] = await Promise.all([
-      getMovieDetails(id),
-      getRecommendedMovies(id),
-      getSimilarMovies(id)
+    const moviePromise = getMovieDetails(id);
+    const recommendationsPromise = getRecommendedMovies(id);
+    const similarPromise = getSimilarMovies(id);
+
+    const movie = await moviePromise;
+    const [recommendationsResult, similarResult] = await Promise.allSettled([
+      recommendationsPromise,
+      similarPromise
     ]);
 
-    const fallbackRecommendations = recommendations.results.length > 0 ? recommendations.results : similar.results;
+    const recommendations = recommendationsResult.status === "fulfilled"
+      ? recommendationsResult.value.results
+      : [];
+    const similar = similarResult.status === "fulfilled"
+      ? similarResult.value.results
+      : [];
+    const fallbackRecommendations = recommendations.length > 0 ? recommendations : similar;
 
     return (
       <main className="min-h-screen">
