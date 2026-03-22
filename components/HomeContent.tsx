@@ -240,7 +240,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
             {!isLoading && movies.length > 0 ? (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                 {movies.slice(0, 10).map((movie) => (
-                  <MovieCard key={`${activeTab}-${movie.id}`} movie={movie} />
+                  <MovieCard key={movie.id} movie={movie} />
                 ))}
               </div>
             ) : null}
