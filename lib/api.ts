@@ -119,7 +119,7 @@ function parseRetryAfterMs(retryAfter: string | null) {
 
 function getRetryDelayMs(attempt: number, retryAfterMs?: number) {
   if (typeof retryAfterMs === "number") {
-    return Math.min(MAX_RETRY_DELAY_MS, Math.max(100, retryAfterMs));
+    return Math.max(100, retryAfterMs);
   }
 
   const exponentialDelay = BASE_RETRY_DELAY_MS * (2 ** attempt);
