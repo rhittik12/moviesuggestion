@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { Movie, formatRating, getPosterUrl } from "@/lib/api";
+import { RetryImage } from "./RetryImage";
 
 type MovieCardProps = {
   movie: Movie;
@@ -14,7 +14,7 @@ export function MovieCard({ movie }: MovieCardProps) {
       className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.08]"
     >
       <div className="relative aspect-[2/3] overflow-hidden">
-        <Image
+        <RetryImage
           src={getPosterUrl(movie.poster_path)}
           alt={movie.title}
           fill

@@ -34,6 +34,11 @@ export type PaginatedResponse<T> = {
 type FetchOptions = {
   cache?: RequestCache;
   revalidate?: number;
+  retry?: {
+    maxAttempts?: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+  };
 };
 
 const TRANSIENT_NETWORK_CODES = new Set([
@@ -45,9 +50,20 @@ const TRANSIENT_NETWORK_CODES = new Set([
 ]);
 
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-const MAX_TMDB_FETCH_ATTEMPTS = 3;
-const BASE_RETRY_DELAY_MS = 250;
-const MAX_RETRY_DELAY_MS = 1600;
+const MAX_TMDB_FETCH_ATTEMPTS = 5;
+const BASE_RETRY_DELAY_MS = 300;
+const MAX_RETRY_DELAY_MS = 3000;
+
+const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
+  "fetch failed",
+  "network",
+  "timed out",
+  "timeout",
+  "socket",
+  "econn",
+  "eai_",
+  "undici"
+];
 
 export class TmdbFetchError extends Error {
   code?: string;
@@ -93,6 +109,33 @@ function isTransientNetworkError(error: unknown) {
   return Boolean(code && TRANSIENT_NETWORK_CODES.has(code));
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "";
+}
+
+function isTransientFetchError(error: unknown) {
+  if (!(error instanceof TypeError)) {
+    return false;
+  }
+
+  const message = getErrorMessage(error).toLowerCase();
+
+  if (TRANSIENT_FETCH_MESSAGE_PATTERNS.some((pattern) => message.includes(pattern))) {
+    return true;
+  }
+
+  if (error && typeof error === "object" && "cause" in error) {
+    const causeMessage = getErrorMessage((error as { cause?: unknown }).cause).toLowerCase();
+    return TRANSIENT_FETCH_MESSAGE_PATTERNS.some((pattern) => causeMessage.includes(pattern));
+  }
+
+  return false;
+}
+
 function isRetryableStatus(status: number) {
   return RETRYABLE_STATUS_CODES.has(status);
 }
@@ -117,14 +160,16 @@ function parseRetryAfterMs(retryAfter: string | null) {
   return undefined;
 }
 
-function getRetryDelayMs(attempt: number, retryAfterMs?: number) {
+function getRetryDelayMs(attempt: number, retryAfterMs: number | undefined, retryOptions: FetchOptions["retry"]) {
   if (typeof retryAfterMs === "number") {
     return Math.max(100, retryAfterMs);
   }
 
-  const exponentialDelay = BASE_RETRY_DELAY_MS * (2 ** attempt);
+  const baseDelayMs = retryOptions?.baseDelayMs ?? BASE_RETRY_DELAY_MS;
+  const maxDelayMs = retryOptions?.maxDelayMs ?? MAX_RETRY_DELAY_MS;
+  const exponentialDelay = baseDelayMs * (2 ** attempt);
   const jitter = Math.floor(Math.random() * 200);
-  return Math.min(MAX_RETRY_DELAY_MS, exponentialDelay + jitter);
+  return Math.min(maxDelayMs, exponentialDelay + jitter);
 }
 
 async function tmdbFetch<T>(
@@ -145,8 +190,9 @@ async function tmdbFetch<T>(
   });
 
   const url = `${TMDB_BASE_URL}${endpoint}?${searchParams.toString()}`;
+  const maxAttempts = options.retry?.maxAttempts ?? MAX_TMDB_FETCH_ATTEMPTS;
 
-  for (let attempt = 0; attempt < MAX_TMDB_FETCH_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const response = await fetch(url, {
         cache: options.cache ?? "force-cache",
@@ -166,8 +212,8 @@ async function tmdbFetch<T>(
           });
         }
 
-        if (isRetryableStatus(response.status) && attempt < MAX_TMDB_FETCH_ATTEMPTS - 1) {
-          await wait(getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after"))));
+        if (isRetryableStatus(response.status) && attempt < maxAttempts - 1) {
+          await wait(getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after")), options.retry));
           continue;
         }
 
@@ -182,8 +228,8 @@ async function tmdbFetch<T>(
         throw error;
       }
 
-      if (isTransientNetworkError(error) && attempt < MAX_TMDB_FETCH_ATTEMPTS - 1) {
-        await wait(getRetryDelayMs(attempt));
+      if ((isTransientNetworkError(error) || isTransientFetchError(error)) && attempt < maxAttempts - 1) {
+        await wait(getRetryDelayMs(attempt, undefined, options.retry));
         continue;
       }
 
@@ -228,7 +274,14 @@ export async function searchMovies(query: string, page = 1) {
 }
 
 export async function getMovieDetails(movieId: string) {
-  return tmdbFetch<MovieDetails>(`/movie/${movieId}`, {}, { revalidate: 1800 });
+  return tmdbFetch<MovieDetails>(`/movie/${movieId}`, {}, {
+    revalidate: 1800,
+    retry: {
+      maxAttempts: 5,
+      baseDelayMs: 350,
+      maxDelayMs: 5000
+    }
+  });
 }
 
 export async function getMovieGenres() {
