@@ -167,9 +167,6 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_right,rgba(255,255,255,0.1),transparent_30%)]" />
           <div className="relative grid gap-10 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.1fr,0.9fr] lg:px-12 lg:py-14">
             <div className="space-y-6">
-              <span className="inline-flex rounded-full border border-highlight/40 bg-highlight/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-highlight">
-                TMDB Powered Picks
-              </span>
               <div className="space-y-4">
                 <h1 className="max-w-2xl text-4xl font-semibold leading-tight text-white sm:text-5xl lg:text-6xl">
                   Find your next movie night favorite in seconds.

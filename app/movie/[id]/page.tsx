@@ -156,7 +156,7 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
             <SectionHeader
               eyebrow="Because You Watched"
               title={`More like ${movie.title}`}
-              description="Recommendations are powered by TMDB similarity and recommendation endpoints."
+              description="Recommended movies "
             />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {fallbackRecommendations.slice(0, 10).map((recommendedMovie) => (
