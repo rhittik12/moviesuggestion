@@ -67,7 +67,7 @@ export function RetryImage({
       alt={alt}
       onError={() => {
         if (displaySrc === fallbackSrc) {
-          setShowPermanentFallback(true);
+          // Fallback already failed; avoid repeating state writes for the same src.
           return;
         }
 
@@ -81,6 +81,10 @@ export function RetryImage({
 
         const jitterMs = Math.floor(Math.random() * 200);
         const delayMs = baseDelayMs * (2 ** attempt) + jitterMs;
+
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+        }
 
         retryTimeoutRef.current = setTimeout(() => {
           setAttempt((currentAttempt) => currentAttempt + 1);
