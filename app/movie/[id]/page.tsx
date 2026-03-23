@@ -1,8 +1,8 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { MovieCard } from "@/components/MovieCard";
 import { Navbar } from "@/components/Navbar";
+import { RetryImage } from "@/components/RetryImage";
 import { SectionHeader } from "@/components/SectionHeader";
 import {
   TmdbFetchError,
@@ -86,11 +86,12 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
         <Navbar />
 
         <section className="relative isolate overflow-hidden border-b border-white/10">
-          <Image
-            src={getBackdropUrl(movie.backdrop_path)}
+          <RetryImage
+            src={getBackdropUrl(movie.backdrop_path, "w1280")}
             alt={movie.title}
             fill
             priority
+            fallbackSrc="/backdrop-placeholder.svg"
             className="-z-20 object-cover opacity-35"
             sizes="100vw"
           />
@@ -98,11 +99,11 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
 
           <div className="mx-auto grid w-full max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[320px,1fr] lg:px-8 lg:py-16">
             <div className="relative mx-auto w-full max-w-[320px] overflow-hidden rounded-[2rem] border border-white/10 shadow-2xl shadow-black/40">
-              <Image
-                src={getPosterUrl(movie.poster_path, "w780")}
+              <RetryImage
+                src={getPosterUrl(movie.poster_path, "w500")}
                 alt={movie.title}
-                width={780}
-                height={1170}
+                width={500}
+                height={750}
                 className="h-auto w-full object-cover"
                 priority
               />
