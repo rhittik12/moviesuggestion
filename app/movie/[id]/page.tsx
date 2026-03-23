@@ -67,21 +67,18 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
 
   try {
     const moviePromise = getMovieDetails(id);
-    const recommendationsPromise = getRecommendedMovies(id);
-    const similarPromise = getSimilarMovies(id);
+    // Optional requests: catch early so they can never become unhandled rejections.
+    const recommendationsPromise = getRecommendedMovies(id).catch(() => null);
+    const similarPromise = getSimilarMovies(id).catch(() => null);
 
     const movie = await moviePromise;
-    const [recommendationsResult, similarResult] = await Promise.allSettled([
+    const [recommendationsResult, similarResult] = await Promise.all([
       recommendationsPromise,
       similarPromise
     ]);
 
-    const recommendations = recommendationsResult.status === "fulfilled"
-      ? recommendationsResult.value.results
-      : [];
-    const similar = similarResult.status === "fulfilled"
-      ? similarResult.value.results
-      : [];
+    const recommendations = recommendationsResult?.results ?? [];
+    const similar = similarResult?.results ?? [];
     const fallbackRecommendations = recommendations.length > 0 ? recommendations : similar;
 
     return (
