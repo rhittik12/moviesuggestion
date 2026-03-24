@@ -65,6 +65,24 @@ const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
   "undici"
 ];
 
+// Diagnostic logging configuration (env var: TMDB_DEBUG=1)
+const DEBUG_MODE = process.env.TMDB_DEBUG === "1";
+
+function createDebugLog() {
+  if (!DEBUG_MODE) {
+    return (..._args: unknown[]) => {
+      // no-op when debug is off
+    };
+  }
+  return (...args: unknown[]) => {
+    console.log("[TMDB_DEBUG]", ...args);
+  };
+}
+
+function generateRequestId(): string {
+  return Math.random().toString(36).substring(2, 11);
+}
+
 export class TmdbFetchError extends Error {
   code?: string;
   status?: number;
@@ -178,6 +196,9 @@ async function tmdbFetch<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const apiKey = getApiKey();
+  const requestId = generateRequestId();
+  const debug = createDebugLog();
+  
   const searchParams = new URLSearchParams({
     api_key: apiKey,
     language: "en-US"
@@ -192,6 +213,9 @@ async function tmdbFetch<T>(
   const url = `${TMDB_BASE_URL}${endpoint}?${searchParams.toString()}`;
   const maxAttempts = options.retry?.maxAttempts ?? MAX_TMDB_FETCH_ATTEMPTS;
 
+  // Log: request_start
+  debug(`request_start endpoint=${endpoint} maxAttempts=${maxAttempts} requestId=${requestId}`);
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const response = await fetch(url, {
@@ -200,6 +224,9 @@ async function tmdbFetch<T>(
       });
 
       if (!response.ok) {
+        // Log: response_not_ok
+        debug(`response_not_ok endpoint=${endpoint} attempt=${attempt} status=${response.status} statusText=${response.statusText} requestId=${requestId}`);
+
         if (response.status === 401) {
           throw new TmdbFetchError("TMDB rejected the API key. Verify TMDB_API_KEY in your .env.local file.", {
             status: response.status
@@ -213,7 +240,12 @@ async function tmdbFetch<T>(
         }
 
         if (isRetryableStatus(response.status) && attempt < maxAttempts - 1) {
-          await wait(getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after")), options.retry));
+          const retryDelayMs = getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after")), options.retry);
+          
+          // Log: retry_scheduled_http
+          debug(`retry_scheduled_http endpoint=${endpoint} attempt=${attempt} nextAttempt=${attempt + 1} retryDelayMs=${retryDelayMs} status=${response.status} requestId=${requestId}`);
+          
+          await wait(retryDelayMs);
           continue;
         }
 
@@ -222,6 +254,9 @@ async function tmdbFetch<T>(
         });
       }
 
+      // Log: request_success
+      debug(`request_success endpoint=${endpoint} attempt=${attempt} requestId=${requestId}`);
+
       return response.json() as Promise<T>;
     } catch (error) {
       if (error instanceof TmdbFetchError) {
@@ -229,9 +264,24 @@ async function tmdbFetch<T>(
       }
 
       if ((isTransientNetworkError(error) || isTransientFetchError(error)) && attempt < maxAttempts - 1) {
-        await wait(getRetryDelayMs(attempt, undefined, options.retry));
+        const errorName = error instanceof Error ? error.name : typeof error;
+        const errorMessage = getErrorMessage(error);
+        const errorCode = getErrorCode(error);
+        const retryDelayMs = getRetryDelayMs(attempt, undefined, options.retry);
+
+        // Log: retry_scheduled_exception
+        debug(`retry_scheduled_exception endpoint=${endpoint} attempt=${attempt} nextAttempt=${attempt + 1} retryDelayMs=${retryDelayMs} errorName=${errorName} errorMessage=${errorMessage} errorCode=${errorCode} requestId=${requestId}`);
+
+        await wait(retryDelayMs);
         continue;
       }
+
+      const errorName = error instanceof Error ? error.name : typeof error;
+      const errorMessage = getErrorMessage(error);
+      const errorCode = getErrorCode(error);
+
+      // Log: request_failed_terminal
+      debug(`request_failed_terminal endpoint=${endpoint} finalAttempt=${attempt} errorName=${errorName} errorMessage=${errorMessage} errorCode=${errorCode} requestId=${requestId}`);
 
       throw new TmdbFetchError(
         "Unable to reach TMDB right now. Check your internet connection, VPN/firewall, or try again in a moment.",
@@ -310,14 +360,6 @@ export async function discoverMoviesByGenre(genreId: number, page = 1) {
 export async function getRecommendedMovies(movieId: string) {
   return tmdbFetch<PaginatedResponse<Movie>>(
     `/movie/${movieId}/recommendations`,
-    {},
-    { revalidate: 1800 }
-  );
-}
-
-export async function getSimilarMovies(movieId: string) {
-  return tmdbFetch<PaginatedResponse<Movie>>(
-    `/movie/${movieId}/similar`,
     {},
     { revalidate: 1800 }
   );
