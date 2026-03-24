@@ -11,7 +11,6 @@ import {
   getBackdropUrl,
   getMovieDetails,
   getRecommendedMovies,
-  getSimilarMovies,
   getPosterUrl,
   hasTmdbApiKey
 } from "@/lib/api";
@@ -66,20 +65,14 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
   const { id } = await params;
 
   try {
-    const moviePromise = getMovieDetails(id);
     // Optional requests: catch early so they can never become unhandled rejections.
     const recommendationsPromise = getRecommendedMovies(id).catch(() => null);
-    const similarPromise = getSimilarMovies(id).catch(() => null);
 
-    const movie = await moviePromise;
-    const [recommendationsResult, similarResult] = await Promise.all([
-      recommendationsPromise,
-      similarPromise
-    ]);
+    const movie = await getMovieDetails(id);
+    const recommendationsResult = await recommendationsPromise;
 
     const recommendations = recommendationsResult?.results ?? [];
-    const similar = similarResult?.results ?? [];
-    const fallbackRecommendations = recommendations.length > 0 ? recommendations : similar;
+    const fallbackRecommendations = recommendations.length > 0 ? recommendations : [];
 
     return (
       <main className="min-h-screen">
