@@ -76,9 +76,10 @@ class TokenBucketLimiter {
   }
 
   async acquire() {
-    this.refillTokens();
+    // Always service queued waiters first to preserve FIFO fairness.
+    this.drainQueue();
 
-    if (this.tokens >= 1) {
+    if (this.queue.length === 0 && this.tokens >= 1) {
       this.tokens -= 1;
       limiterMetrics.acquiredImmediately += 1;
       logResilience("outbound_acquired_immediately", {
@@ -129,6 +130,9 @@ class TokenBucketLimiter {
         }
       });
     });
+
+    // Attempt to dispatch immediately in case tokens are currently available.
+    this.drainQueue();
   }
 
   getQueueLength() {
@@ -143,11 +147,15 @@ class TokenBucketLimiter {
 const limiter = new TokenBucketLimiter();
 
 const isServerRuntime = typeof window === "undefined";
+const limiterTickIntervalMs = Math.max(
+  5,
+  Math.min(100, Math.floor(resilienceConfig.outboundQueueTimeoutMs / 2))
+);
 
 if (isServerRuntime) {
   const intervalHandle = setInterval(() => {
     limiter.tick();
-  }, 100);
+  }, limiterTickIntervalMs);
 
   if (typeof intervalHandle.unref === "function") {
     intervalHandle.unref();
