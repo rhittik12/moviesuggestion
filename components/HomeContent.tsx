@@ -23,6 +23,16 @@ type MoviesResponse = {
   message?: string;
 };
 
+function toVisibleMoviesError(response: Response, data: MoviesResponse, fallbackMessage: string) {
+  if (!response.ok) {
+    throw new Error(data.message || fallbackMessage);
+  }
+
+  if (data.message && data.results.length === 0) {
+    throw new Error(data.message);
+  }
+}
+
 export function HomeContent({ initialTrendingMovies, initialPopularMovies, genres }: HomeContentProps) {
   const [activeTab, setActiveTab] = useState<HomeTab>("trending");
   const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
@@ -35,9 +45,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
     const response = await fetch("/api/trending", { signal, cache: "no-store" });
     const data = (await response.json()) as MoviesResponse;
 
-    if (!response.ok) {
-      throw new Error(data.message || "Unable to load trending movies.");
-    }
+    toVisibleMoviesError(response, data, "Unable to load trending movies.");
 
     return data.results;
   }
@@ -46,9 +54,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
     const response = await fetch("/api/popular", { signal, cache: "no-store" });
     const data = (await response.json()) as MoviesResponse;
 
-    if (!response.ok) {
-      throw new Error(data.message || "Unable to load popular movies.");
-    }
+    toVisibleMoviesError(response, data, "Unable to load popular movies.");
 
     return data.results;
   }
@@ -57,9 +63,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
     const response = await fetch(`/api/discover?genreId=${genreId}`, { signal, cache: "no-store" });
     const data = (await response.json()) as MoviesResponse;
 
-    if (!response.ok) {
-      throw new Error(data.message || "Unable to load this genre right now.");
-    }
+    toVisibleMoviesError(response, data, "Unable to load this genre right now.");
 
     return data.results;
   }

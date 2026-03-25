@@ -17,9 +17,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const providedSecret = request.headers.get("x-prewarm-secret")
-    || request.nextUrl.searchParams.get("secret")
-    || "";
+  const providedSecret = request.headers.get("x-prewarm-secret") || "";
 
   if (providedSecret !== configuredSecret) {
     return unauthorizedResponse();
