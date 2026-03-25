@@ -39,6 +39,9 @@ npm install
 
 ```
 TMDB_API_KEY=your_actual_api_key_here
+UPSTASH_REDIS_REST_URL=your_upstash_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
+PREWARM_SECRET=choose_a_long_random_secret
 ```
 
 3. Start the development server:
@@ -106,6 +109,35 @@ The app uses minimal configuration beyond the API key:
 - **Revalidation:** Trending/popular movies revalidate every 30 minutes (1800 seconds)
 - **Genre Cache:** Movie genres cache for 24 hours (86400 seconds)
 - **Image Domains:** Configured in [next.config.ts](next.config.ts)
+
+### Resilience Configuration
+
+The server includes a resilient TMDB fetch path with shared caching, stale-on-error fallback, single-flight deduplication, and outbound queueing. You can tune these with `.env.local` values:
+
+- `TMDB_DETAILS_FRESH_TTL_MS` and `TMDB_DETAILS_STALE_TTL_MS`
+- `TMDB_DETAILS_RETRY_SOON_TTL_MS` and `TMDB_DETAILS_QUICK_FALLBACK_TIMEOUT_MS`
+- `TMDB_RECS_FRESH_TTL_MS` and `TMDB_RECS_STALE_TTL_MS`
+- `TMDB_SEARCH_FRESH_TTL_MS` and `TMDB_SEARCH_STALE_TTL_MS`
+- `TMDB_OUTBOUND_TOKENS_PER_SECOND`
+- `TMDB_OUTBOUND_BUCKET_SIZE`
+- `TMDB_OUTBOUND_QUEUE_LIMIT`
+- `TMDB_OUTBOUND_QUEUE_TIMEOUT_MS`
+- `TMDB_RESILIENCE_LOGS`
+- `PREWARM_MOVIE_LIMIT`, `PREWARM_POPULAR_PAGES`, `PREWARM_BATCH_SIZE`, and `PREWARM_CONCURRENCY`
+
+Recommended production defaults:
+
+- `TMDB_DETAILS_STALE_TTL_MS=86400000`
+- `TMDB_RECS_STALE_TTL_MS=86400000`
+- `TMDB_OUTBOUND_TOKENS_PER_SECOND=6`
+- `TMDB_OUTBOUND_BUCKET_SIZE=40`
+- `TMDB_OUTBOUND_QUEUE_LIMIT=500`
+- `TMDB_OUTBOUND_QUEUE_TIMEOUT_MS=8000`
+- `PREWARM_MOVIE_LIMIT=200`
+
+### Cache Prewarm Endpoint
+
+Use `POST /api/prewarm` with header `x-prewarm-secret: <PREWARM_SECRET>` to prewarm top trending/popular movie details and recommendations. The endpoint now warms multiple popular pages with bounded batching/concurrency and returns run metrics (`attempted`, `warmed`, `failedCount`, `skipped`, `durationMs`). This endpoint is designed for internal automation (for example cron jobs).
 
 ## Development Notes
 

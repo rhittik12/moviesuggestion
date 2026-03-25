@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Genre, Movie } from "@/lib/api";
+import type { Genre, Movie } from "@/lib/api";
 
 import { GenreFilter } from "./GenreFilter";
 import { MovieCard } from "./MovieCard";
