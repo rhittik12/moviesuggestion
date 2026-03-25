@@ -1,7 +1,15 @@
 import Link from "next/link";
 
-import { Movie, formatRating, getPosterUrl } from "@/lib/api";
+import type { Movie } from "@/lib/api";
 import { RetryImage } from "./RetryImage";
+
+function getPosterPath(path: string | null, size = "w500") {
+  if (!path) {
+    return "/poster-placeholder.svg";
+  }
+
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
 
 type MovieCardProps = {
   movie: Movie;
@@ -15,7 +23,7 @@ export function MovieCard({ movie }: MovieCardProps) {
     >
       <div className="relative aspect-[2/3] overflow-hidden">
         <RetryImage
-          src={getPosterUrl(movie.poster_path)}
+          src={getPosterPath(movie.poster_path)}
           alt={movie.title}
           fill
           className="object-cover transition duration-500 group-hover:scale-105"
@@ -23,7 +31,7 @@ export function MovieCard({ movie }: MovieCardProps) {
         />
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent p-4">
           <div className="inline-flex items-center rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-xs font-medium text-white">
-            {formatRating(movie.vote_average)} / 10
+            {movie.vote_average.toFixed(1)} / 10
           </div>
         </div>
       </div>

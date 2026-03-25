@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { Genre, Movie } from "@/lib/api";
+import type { Genre, Movie } from "@/lib/api";
 
 import { GenreFilter } from "./GenreFilter";
 import { MovieCard } from "./MovieCard";
@@ -18,6 +18,7 @@ type ApiResponse = {
   page: number;
   results: Movie[];
   totalPages: number;
+  message?: string;
 };
 
 type ApiErrorResponse = {
@@ -89,6 +90,10 @@ export function SearchExperience({ genres }: SearchExperienceProps) {
         }
 
         const data = (await response.json()) as ApiResponse;
+
+        if (data.message && data.results.length === 0) {
+          throw new Error(data.message);
+        }
 
         setMovies((current) => (page === 1 ? data.results : [...current, ...data.results]));
         setTotalPages(data.totalPages);

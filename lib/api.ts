@@ -1,3 +1,9 @@
+import { runWithOutboundLimit } from "@/lib/outboundLimiter";
+import { resilienceConfig } from "@/lib/resilienceConfig";
+import { logResilience } from "@/lib/resilienceLogger";
+import { readSharedCache, writeSharedCache } from "@/lib/sharedCache";
+import { withSingleFlight } from "@/lib/singleFlight";
+
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 
@@ -34,11 +40,47 @@ export type PaginatedResponse<T> = {
 type FetchOptions = {
   cache?: RequestCache;
   revalidate?: number;
+  timeoutMs?: number;
   retry?: {
     maxAttempts?: number;
     baseDelayMs?: number;
     maxDelayMs?: number;
   };
+};
+
+type CachePolicy = {
+  key: string;
+  freshTtlMs: number;
+  maxTtlMs: number;
+};
+
+export type TmdbFetchMetadata = {
+  usedStaleCache: boolean;
+  source: "upstream" | "cache-fresh" | "cache-stale";
+};
+
+export type MovieDetailsOutcome =
+  | {
+      kind: "full";
+      movie: MovieDetails;
+      metadata: TmdbFetchMetadata;
+    }
+  | {
+      kind: "degraded";
+      movieId: string;
+      message: string;
+      retryAfterSeconds: number;
+    }
+  | {
+      kind: "hard-failure";
+      movieId: string;
+      message: string;
+      status?: number;
+    };
+
+type TmdbFetchResult<T> = {
+  data: T;
+  metadata: TmdbFetchMetadata;
 };
 
 const TRANSIENT_NETWORK_CODES = new Set([
@@ -53,6 +95,9 @@ const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const MAX_TMDB_FETCH_ATTEMPTS = 5;
 const BASE_RETRY_DELAY_MS = 300;
 const MAX_RETRY_DELAY_MS = 3000;
+const OUTBOUND_QUEUE_CODES = new Set(["OUTBOUND_QUEUE_FULL", "OUTBOUND_QUEUE_TIMEOUT"]);
+const detailRetrySoonMarkers = new Map<string, number>();
+const detailRetrySoonCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
   "fetch failed",
@@ -65,7 +110,6 @@ const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
   "undici"
 ];
 
-// Diagnostic logging configuration (env var: TMDB_DEBUG=1)
 const DEBUG_MODE = process.env.TMDB_DEBUG === "1";
 
 function createDebugLog() {
@@ -74,6 +118,7 @@ function createDebugLog() {
       // no-op when debug is off
     };
   }
+
   return (...args: unknown[]) => {
     console.log("[TMDB_DEBUG]", ...args);
   };
@@ -122,17 +167,17 @@ function getErrorCode(error: unknown) {
   return undefined;
 }
 
-function isTransientNetworkError(error: unknown) {
-  const code = getErrorCode(error);
-  return Boolean(code && TRANSIENT_NETWORK_CODES.has(code));
-}
-
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
 
   return "";
+}
+
+function isTransientNetworkError(error: unknown) {
+  const code = getErrorCode(error);
+  return Boolean(code && TRANSIENT_NETWORK_CODES.has(code));
 }
 
 function isTransientFetchError(error: unknown) {
@@ -190,7 +235,114 @@ function getRetryDelayMs(attempt: number, retryAfterMs: number | undefined, retr
   return Math.min(maxDelayMs, exponentialDelay + jitter);
 }
 
-async function tmdbFetch<T>(
+function markDetailsRetrySoon(movieId: string, ttlMs: number) {
+  detailRetrySoonMarkers.set(movieId, Date.now() + ttlMs);
+
+  const existingTimer = detailRetrySoonCleanupTimers.get(movieId);
+
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const cleanupTimer = setTimeout(() => {
+    detailRetrySoonMarkers.delete(movieId);
+    detailRetrySoonCleanupTimers.delete(movieId);
+  }, ttlMs + 25);
+
+  if (typeof cleanupTimer.unref === "function") {
+    cleanupTimer.unref();
+  }
+
+  detailRetrySoonCleanupTimers.set(movieId, cleanupTimer);
+}
+
+function getDetailsRetrySoonRemainingMs(movieId: string) {
+  const retryAt = detailRetrySoonMarkers.get(movieId);
+
+  if (!retryAt) {
+    return 0;
+  }
+
+  const remaining = retryAt - Date.now();
+
+  if (remaining <= 0) {
+    detailRetrySoonMarkers.delete(movieId);
+
+    const cleanupTimer = detailRetrySoonCleanupTimers.get(movieId);
+
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      detailRetrySoonCleanupTimers.delete(movieId);
+    }
+
+    return 0;
+  }
+
+  return remaining;
+}
+
+export function __setDetailsRetrySoonMarkerForTest(movieId: string, ttlMs: number) {
+  markDetailsRetrySoon(movieId, ttlMs);
+}
+
+export function __clearDetailsRetrySoonMarkersForTest() {
+  detailRetrySoonMarkers.clear();
+
+  detailRetrySoonCleanupTimers.forEach((timer) => clearTimeout(timer));
+  detailRetrySoonCleanupTimers.clear();
+}
+
+function isNonRetryableDetailsError(error: unknown) {
+  return error instanceof TmdbFetchError
+    && (error.status === 401 || error.status === 404);
+}
+
+function normalizeParams(params: Record<string, string | number | undefined>) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${String(value).trim()}`)
+    .join("&");
+}
+
+function buildCachePolicy(
+  scope: string,
+  endpoint: string,
+  params: Record<string, string | number | undefined>,
+  freshTtlMs: number,
+  maxTtlMs: number
+): CachePolicy {
+  const normalizedParams = normalizeParams(params);
+  const key = `tmdb:${scope}:${endpoint}:${normalizedParams}`;
+
+  return {
+    key,
+    freshTtlMs,
+    maxTtlMs
+  };
+}
+
+function isRecoverableForStale(error: unknown) {
+  if (!(error instanceof TmdbFetchError)) {
+    return false;
+  }
+
+  if (typeof error.status === "number" && isRetryableStatus(error.status)) {
+    return true;
+  }
+
+  if (error.code && (TRANSIENT_NETWORK_CODES.has(error.code) || OUTBOUND_QUEUE_CODES.has(error.code))) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isRecoverableTmdbErrorForStale(error: unknown) {
+  return isRecoverableForStale(error);
+}
+
+async function performTmdbRequest<T>(
   endpoint: string,
   params: Record<string, string | number | undefined> = {},
   options: FetchOptions = {}
@@ -198,7 +350,7 @@ async function tmdbFetch<T>(
   const apiKey = getApiKey();
   const requestId = generateRequestId();
   const debug = createDebugLog();
-  
+
   const searchParams = new URLSearchParams({
     api_key: apiKey,
     language: "en-US"
@@ -213,19 +365,31 @@ async function tmdbFetch<T>(
   const url = `${TMDB_BASE_URL}${endpoint}?${searchParams.toString()}`;
   const maxAttempts = options.retry?.maxAttempts ?? MAX_TMDB_FETCH_ATTEMPTS;
 
-  // Log: request_start
   debug(`request_start endpoint=${endpoint} maxAttempts=${maxAttempts} requestId=${requestId}`);
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = typeof AbortController !== "undefined"
+      ? new AbortController()
+      : undefined;
+    const timeoutHandle = controller && options.timeoutMs
+      ? setTimeout(() => controller.abort(), options.timeoutMs)
+      : undefined;
+
     try {
-      const response = await fetch(url, {
-        cache: options.cache ?? "force-cache",
-        next: options.revalidate ? { revalidate: options.revalidate } : undefined
-      });
+      const response = await runWithOutboundLimit(() =>
+        fetch(url, {
+          cache: options.cache ?? "force-cache",
+          next: options.revalidate ? { revalidate: options.revalidate } : undefined,
+          signal: controller?.signal
+        })
+      );
+
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       if (!response.ok) {
-        // Log: response_not_ok
-        debug(`response_not_ok endpoint=${endpoint} attempt=${attempt} status=${response.status} statusText=${response.statusText} requestId=${requestId}`);
+        debug(`response_not_ok endpoint=${endpoint} attempt=${attempt} status=${response.status} requestId=${requestId}`);
 
         if (response.status === 401) {
           throw new TmdbFetchError("TMDB rejected the API key. Verify TMDB_API_KEY in your .env.local file.", {
@@ -240,11 +404,19 @@ async function tmdbFetch<T>(
         }
 
         if (isRetryableStatus(response.status) && attempt < maxAttempts - 1) {
-          const retryDelayMs = getRetryDelayMs(attempt, parseRetryAfterMs(response.headers.get("retry-after")), options.retry);
-          
-          // Log: retry_scheduled_http
-          debug(`retry_scheduled_http endpoint=${endpoint} attempt=${attempt} nextAttempt=${attempt + 1} retryDelayMs=${retryDelayMs} status=${response.status} requestId=${requestId}`);
-          
+          const retryDelayMs = getRetryDelayMs(
+            attempt,
+            parseRetryAfterMs(response.headers.get("retry-after")),
+            options.retry
+          );
+          logResilience("tmdb_retry", {
+            endpoint,
+            attempt,
+            nextAttempt: attempt + 1,
+            retryDelayMs,
+            status: response.status
+          });
+
           await wait(retryDelayMs);
           continue;
         }
@@ -254,39 +426,74 @@ async function tmdbFetch<T>(
         });
       }
 
-      // Log: request_success
       debug(`request_success endpoint=${endpoint} attempt=${attempt} requestId=${requestId}`);
 
       return response.json() as Promise<T>;
     } catch (error) {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+
       if (error instanceof TmdbFetchError) {
         throw error;
       }
 
-      if ((isTransientNetworkError(error) || isTransientFetchError(error)) && attempt < maxAttempts - 1) {
-        const errorName = error instanceof Error ? error.name : typeof error;
-        const errorMessage = getErrorMessage(error);
-        const errorCode = getErrorCode(error);
-        const retryDelayMs = getRetryDelayMs(attempt, undefined, options.retry);
+      const errorMessage = getErrorMessage(error);
 
-        // Log: retry_scheduled_exception
-        debug(`retry_scheduled_exception endpoint=${endpoint} attempt=${attempt} nextAttempt=${attempt + 1} retryDelayMs=${retryDelayMs} errorName=${errorName} errorMessage=${errorMessage} errorCode=${errorCode} requestId=${requestId}`);
+      if ((errorMessage.includes("Outbound TMDB queue") || OUTBOUND_QUEUE_CODES.has(getErrorCode(error) ?? "")) && attempt < maxAttempts - 1) {
+        const retryDelayMs = getRetryDelayMs(attempt, undefined, options.retry);
+        logResilience("tmdb_retry", {
+          endpoint,
+          attempt,
+          nextAttempt: attempt + 1,
+          retryDelayMs,
+          reason: "queue_saturated"
+        });
+        await wait(retryDelayMs);
+        continue;
+      }
+
+      if ((isTransientNetworkError(error) || isTransientFetchError(error)) && attempt < maxAttempts - 1) {
+        const retryDelayMs = getRetryDelayMs(attempt, undefined, options.retry);
+        logResilience("tmdb_retry", {
+          endpoint,
+          attempt,
+          nextAttempt: attempt + 1,
+          retryDelayMs,
+          reason: "transient_network"
+        });
 
         await wait(retryDelayMs);
         continue;
       }
 
-      const errorName = error instanceof Error ? error.name : typeof error;
-      const errorMessage = getErrorMessage(error);
       const errorCode = getErrorCode(error);
 
-      // Log: request_failed_terminal
-      debug(`request_failed_terminal endpoint=${endpoint} finalAttempt=${attempt} errorName=${errorName} errorMessage=${errorMessage} errorCode=${errorCode} requestId=${requestId}`);
+      logResilience("tmdb_terminal_error", {
+        endpoint,
+        attempt,
+        errorMessage,
+        errorCode
+      });
+
+      if (errorMessage.includes("queue full")) {
+        throw new TmdbFetchError("TMDB traffic is currently saturated. Please try again shortly.", {
+          code: "OUTBOUND_QUEUE_FULL",
+          status: 503
+        });
+      }
+
+      if (errorMessage.includes("queue timeout")) {
+        throw new TmdbFetchError("TMDB traffic is currently saturated. Please try again shortly.", {
+          code: "OUTBOUND_QUEUE_TIMEOUT",
+          status: 503
+        });
+      }
 
       throw new TmdbFetchError(
         "Unable to reach TMDB right now. Check your internet connection, VPN/firewall, or try again in a moment.",
         {
-          code: getErrorCode(error)
+          code: errorCode
         }
       );
     }
@@ -295,57 +502,268 @@ async function tmdbFetch<T>(
   throw new TmdbFetchError("Unable to reach TMDB right now.");
 }
 
+async function tmdbFetchWithResilience<T>(
+  endpoint: string,
+  params: Record<string, string | number | undefined> = {},
+  options: FetchOptions = {},
+  cachePolicy?: CachePolicy
+): Promise<TmdbFetchResult<T>> {
+  if (!cachePolicy) {
+    return {
+      data: await performTmdbRequest<T>(endpoint, params, options),
+      metadata: {
+        usedStaleCache: false,
+        source: "upstream"
+      }
+    };
+  }
+
+  const cacheKey = cachePolicy.key;
+  const cached = await readSharedCache<T>(cacheKey, cachePolicy.freshTtlMs, cachePolicy.maxTtlMs);
+
+  if (cached?.isFresh) {
+    return {
+      data: cached.value,
+      metadata: {
+        usedStaleCache: false,
+        source: "cache-fresh"
+      }
+    };
+  }
+
+  const refreshed = async () =>
+    withSingleFlight(cacheKey, async () => {
+      logResilience("singleflight_create", { cacheKey });
+      const data = await performTmdbRequest<T>(endpoint, params, options);
+      await writeSharedCache(cacheKey, data, cachePolicy.maxTtlMs);
+      return data;
+    });
+
+  try {
+    if (cached && !cached.isFresh) {
+      logResilience("singleflight_join", { cacheKey, reason: "stale_refresh" });
+    }
+
+    const data = await refreshed();
+
+    return {
+      data,
+      metadata: {
+        usedStaleCache: false,
+        source: "upstream"
+      }
+    };
+  } catch (error) {
+    if (cached && isRecoverableForStale(error)) {
+      logResilience("stale_served_on_error", {
+        cacheKey,
+        reason: error instanceof TmdbFetchError ? (error.code ?? error.status ?? "unknown") : "unknown",
+        cacheSource: cached.source
+      });
+
+      return {
+        data: cached.value,
+        metadata: {
+          usedStaleCache: true,
+          source: "cache-stale"
+        }
+      };
+    }
+
+    throw error;
+  }
+}
+
 export async function getTrendingMovies() {
-  return tmdbFetch<PaginatedResponse<Movie>>(
+  const response = await tmdbFetchWithResilience<PaginatedResponse<Movie>>(
     "/trending/movie/week",
     {},
-    { revalidate: 1800 }
+    { revalidate: 1800 },
+    buildCachePolicy("trending", "/trending/movie/week", {}, 30 * 60 * 1_000, 2 * 60 * 60 * 1_000)
   );
+
+  return response.data;
 }
 
 export async function getPopularMovies(page = 1) {
-  return tmdbFetch<PaginatedResponse<Movie>>(
+  const response = await tmdbFetchWithResilience<PaginatedResponse<Movie>>(
     "/movie/popular",
     { page },
-    { revalidate: 1800 }
+    { revalidate: 1800 },
+    buildCachePolicy("popular", "/movie/popular", { page }, 30 * 60 * 1_000, 2 * 60 * 60 * 1_000)
   );
+
+  return response.data;
+}
+
+function shouldCacheSearchQuery(query: string, page: number) {
+  const normalized = query.trim().toLowerCase();
+  return normalized.length >= 3 && normalized.length <= 40 && page <= 2;
 }
 
 export async function searchMovies(query: string, page = 1) {
-  return tmdbFetch<PaginatedResponse<Movie>>(
+  const searchParams = {
+    query,
+    page,
+    include_adult: "false"
+  };
+
+  const cachePolicy = shouldCacheSearchQuery(query, page)
+    ? buildCachePolicy(
+        "search",
+        "/search/movie",
+        searchParams,
+        resilienceConfig.searchFreshTtlMs,
+        resilienceConfig.searchStaleTtlMs
+      )
+    : undefined;
+
+  const response = await tmdbFetchWithResilience<PaginatedResponse<Movie>>(
     "/search/movie",
+    searchParams,
+    { cache: "no-store" },
+    cachePolicy
+  );
+
+  return response.data;
+}
+
+export async function getMovieDetailsWithMeta(movieId: string) {
+  return tmdbFetchWithResilience<MovieDetails>(
+    `/movie/${movieId}`,
+    {},
     {
-      query,
-      page,
-      include_adult: "false"
+      revalidate: 1800,
+      retry: {
+        maxAttempts: 5,
+        baseDelayMs: 350,
+        maxDelayMs: 5000
+      }
     },
-    { cache: "no-store" }
+    buildCachePolicy(
+      "details",
+      `/movie/${movieId}`,
+      {},
+      resilienceConfig.detailsFreshTtlMs,
+      resilienceConfig.detailsStaleTtlMs
+    )
   );
 }
 
-export async function getMovieDetails(movieId: string) {
-  return tmdbFetch<MovieDetails>(`/movie/${movieId}`, {}, {
-    revalidate: 1800,
-    retry: {
-      maxAttempts: 5,
-      baseDelayMs: 350,
-      maxDelayMs: 5000
+async function getMovieDetailsQuickFallback(movieId: string) {
+  const data = await performTmdbRequest<MovieDetails>(
+    `/movie/${movieId}`,
+    {},
+    {
+      cache: "no-store",
+      timeoutMs: resilienceConfig.detailsQuickFallbackTimeoutMs,
+      retry: {
+        maxAttempts: 1
+      }
     }
+  );
+
+  const cachePolicy = buildCachePolicy(
+    "details",
+    `/movie/${movieId}`,
+    {},
+    resilienceConfig.detailsFreshTtlMs,
+    resilienceConfig.detailsStaleTtlMs
+  );
+
+  await writeSharedCache(cachePolicy.key, data, cachePolicy.maxTtlMs);
+
+  return data;
+}
+
+export async function getMovieDetailsOutcome(movieId: string): Promise<MovieDetailsOutcome> {
+  const retrySoonRemainingMs = getDetailsRetrySoonRemainingMs(movieId);
+
+  if (retrySoonRemainingMs > 0) {
+    return {
+      kind: "degraded",
+      movieId,
+      message: "Movie details are temporarily delayed. Please retry in a few seconds.",
+      retryAfterSeconds: Math.max(1, Math.ceil(retrySoonRemainingMs / 1000))
+    };
+  }
+
+  try {
+    const response = await getMovieDetailsWithMeta(movieId);
+
+    return {
+      kind: "full",
+      movie: response.data,
+      metadata: response.metadata
+    };
+  } catch (error) {
+    if (isNonRetryableDetailsError(error)) {
+      return {
+        kind: "hard-failure",
+        movieId,
+        message: error instanceof Error ? error.message : "Unable to load this movie.",
+        status: error instanceof TmdbFetchError ? error.status : undefined
+      };
+    }
+
+    if (isRecoverableForStale(error)) {
+      try {
+        const movie = await getMovieDetailsQuickFallback(movieId);
+
+        return {
+          kind: "full",
+          movie,
+          metadata: {
+            usedStaleCache: false,
+            source: "upstream"
+          }
+        };
+      } catch {
+        markDetailsRetrySoon(movieId, resilienceConfig.detailsRetrySoonTtlMs);
+
+        return {
+          kind: "degraded",
+          movieId,
+          message: "Movie details are temporarily delayed. Please retry in a few seconds.",
+          retryAfterSeconds: Math.max(1, Math.ceil(resilienceConfig.detailsRetrySoonTtlMs / 1000))
+        };
+      }
+    }
+
+    return {
+      kind: "hard-failure",
+      movieId,
+      message: error instanceof Error ? error.message : "Unable to load this movie.",
+      status: error instanceof TmdbFetchError ? error.status : undefined
+    };
+  }
+}
+
+export async function getMovieDetails(movieId: string) {
+  const outcome = await getMovieDetailsOutcome(movieId);
+
+  if (outcome.kind === "full") {
+    return outcome.movie;
+  }
+
+  throw new TmdbFetchError(outcome.message, {
+    status: outcome.kind === "hard-failure" ? outcome.status : 503
   });
 }
 
 export async function getMovieGenres() {
-  const response = await tmdbFetch<{ genres: Genre[] }>(
+  const response = await tmdbFetchWithResilience<{ genres: Genre[] }>(
     "/genre/movie/list",
     {},
-    { revalidate: 86400 }
+    { revalidate: 86400 },
+    buildCachePolicy("genres", "/genre/movie/list", {}, 24 * 60 * 60 * 1_000, 48 * 60 * 60 * 1_000)
   );
 
-  return response.genres;
+  return response.data.genres;
 }
 
 export async function discoverMoviesByGenre(genreId: number, page = 1) {
-  return tmdbFetch<PaginatedResponse<Movie>>(
+  const response = await tmdbFetchWithResilience<PaginatedResponse<Movie>>(
     "/discover/movie",
     {
       with_genres: genreId,
@@ -355,14 +773,87 @@ export async function discoverMoviesByGenre(genreId: number, page = 1) {
     },
     { cache: "no-store" }
   );
+
+  return response.data;
+}
+
+export async function getRecommendedMoviesWithMeta(movieId: string) {
+  return tmdbFetchWithResilience<PaginatedResponse<Movie>>(
+    `/movie/${movieId}/recommendations`,
+    {},
+    { revalidate: 1800 },
+    buildCachePolicy(
+      "recommendations",
+      `/movie/${movieId}/recommendations`,
+      {},
+      resilienceConfig.recommendationsFreshTtlMs,
+      resilienceConfig.recommendationsStaleTtlMs
+    )
+  );
 }
 
 export async function getRecommendedMovies(movieId: string) {
-  return tmdbFetch<PaginatedResponse<Movie>>(
-    `/movie/${movieId}/recommendations`,
-    {},
-    { revalidate: 1800 }
-  );
+  const response = await getRecommendedMoviesWithMeta(movieId);
+  return response.data;
+}
+
+export async function prewarmMovieCaches(movieIds: string[]) {
+  const startedAt = Date.now();
+  const normalizedIds = Array.from(new Set(movieIds.filter(Boolean)));
+  const skipped = Math.max(0, movieIds.length - normalizedIds.length);
+  const warmed: string[] = [];
+  const failed: string[] = [];
+
+  const batches: string[][] = [];
+
+  for (let index = 0; index < normalizedIds.length; index += resilienceConfig.prewarmBatchSize) {
+    batches.push(normalizedIds.slice(index, index + resilienceConfig.prewarmBatchSize));
+  }
+
+  const queue = [...batches];
+
+  const workerCount = Math.min(resilienceConfig.prewarmConcurrency, Math.max(1, queue.length));
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const batch = queue.shift();
+
+      if (!batch || batch.length === 0) {
+        break;
+      }
+
+      const batchResults = await Promise.allSettled(
+        batch.map(async (movieId) => {
+          await Promise.all([getMovieDetails(movieId), getRecommendedMovies(movieId)]);
+          return movieId;
+        })
+      );
+
+      batchResults.forEach((result, position) => {
+        if (result.status === "fulfilled") {
+          warmed.push(result.value);
+          return;
+        }
+
+        const fallbackMovieId = batch[position];
+
+        if (fallbackMovieId) {
+          failed.push(fallbackMovieId);
+        }
+      });
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return {
+    attempted: normalizedIds.length,
+    warmed,
+    failed,
+    failedCount: failed.length,
+    skipped,
+    durationMs: Date.now() - startedAt
+  };
 }
 
 export function getPosterUrl(path: string | null, size = "w500") {

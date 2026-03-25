@@ -1,15 +1,17 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { MovieCard } from "@/components/MovieCard";
 import { Navbar } from "@/components/Navbar";
 import { RetryImage } from "@/components/RetryImage";
 import { SectionHeader } from "@/components/SectionHeader";
+import { MovieGridSkeleton } from "@/components/Skeletons";
 import {
   TmdbFetchError,
   formatDate,
   formatRating,
   getBackdropUrl,
-  getMovieDetails,
+  getMovieDetailsOutcome,
   getRecommendedMovies,
   getPosterUrl,
   hasTmdbApiKey
@@ -19,6 +21,11 @@ type MoviePageProps = {
   params: Promise<{
     id: string;
   }>;
+};
+
+type RecommendationsProps = {
+  movieId: string;
+  movieTitle: string;
 };
 
 function MovieUnavailable({ message }: { message: string }) {
@@ -38,6 +45,64 @@ function MovieUnavailable({ message }: { message: string }) {
       </div>
     </main>
   );
+}
+
+function RecommendationsUnavailable({ movieTitle }: { movieTitle: string }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+      Recommendations are temporarily unavailable for {movieTitle}. You can still browse this movie normally.
+    </div>
+  );
+}
+
+function MovieDetailsDelayed({ movieId, message, retryAfterSeconds }: { movieId: string; message: string; retryAfterSeconds: number }) {
+  return (
+    <main className="min-h-screen">
+      <Navbar />
+      <div className="mx-auto flex min-h-[70vh] max-w-4xl flex-col items-center justify-center gap-6 px-4 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-highlight">Loading Delayed</p>
+        <h1 className="text-4xl font-semibold text-white">Movie details are temporarily delayed</h1>
+        <p className="max-w-2xl text-sm leading-7 text-white/65 sm:text-base">{message}</p>
+        <p className="text-sm text-white/55">Movie ID: {movieId}</p>
+        <p className="text-sm text-white/55">Retry after about {retryAfterSeconds}s.</p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href={`/movie/${movieId}`}
+            className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+          >
+            Retry Now
+          </Link>
+          <Link
+            href="/"
+            className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+          >
+            Back to Home
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+async function MovieRecommendations({ movieId, movieTitle }: RecommendationsProps) {
+  try {
+    const recommendationsResult = await getRecommendedMovies(movieId);
+    const recommendations = recommendationsResult.results.slice(0, 10);
+
+    if (recommendations.length === 0) {
+      return <RecommendationsUnavailable movieTitle={movieTitle} />;
+    }
+
+    return (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {recommendations.map((recommendedMovie) => (
+          <MovieCard key={recommendedMovie.id} movie={recommendedMovie} />
+        ))}
+      </div>
+    );
+  } catch {
+    return <RecommendationsUnavailable movieTitle={movieTitle} />;
+  }
 }
 
 export default async function MovieDetailsPage({ params }: MoviePageProps) {
@@ -65,14 +130,23 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
   const { id } = await params;
 
   try {
-    // Optional requests: catch early so they can never become unhandled rejections.
-    const recommendationsPromise = getRecommendedMovies(id).catch(() => null);
+    const detailsOutcome = await getMovieDetailsOutcome(id);
 
-    const movie = await getMovieDetails(id);
-    const recommendationsResult = await recommendationsPromise;
+    if (detailsOutcome.kind === "degraded") {
+      return (
+        <MovieDetailsDelayed
+          movieId={detailsOutcome.movieId}
+          message={detailsOutcome.message}
+          retryAfterSeconds={detailsOutcome.retryAfterSeconds}
+        />
+      );
+    }
 
-    const recommendations = recommendationsResult?.results ?? [];
-    const fallbackRecommendations = recommendations.length > 0 ? recommendations : [];
+    if (detailsOutcome.kind === "hard-failure") {
+      return <MovieUnavailable message={detailsOutcome.message} />;
+    }
+
+    const movie = detailsOutcome.movie;
 
     return (
       <main className="min-h-screen">
@@ -149,11 +223,9 @@ export default async function MovieDetailsPage({ params }: MoviePageProps) {
               title={`More like ${movie.title}`}
               description="Recommended movies "
             />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {fallbackRecommendations.slice(0, 10).map((recommendedMovie) => (
-                <MovieCard key={recommendedMovie.id} movie={recommendedMovie} />
-              ))}
-            </div>
+            <Suspense fallback={<MovieGridSkeleton count={5} />}>
+              <MovieRecommendations movieId={id} movieTitle={movie.title} />
+            </Suspense>
           </div>
         </section>
       </main>

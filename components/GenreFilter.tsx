@@ -1,6 +1,6 @@
 "use client";
 
-import { Genre } from "@/lib/api";
+import type { Genre } from "@/lib/api";
 
 type GenreFilterProps = {
   genres: Genre[];

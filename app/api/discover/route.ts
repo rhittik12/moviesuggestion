@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { TmdbFetchError, discoverMoviesByGenre } from "@/lib/api";
+import { TmdbFetchError, discoverMoviesByGenre, isRecoverableTmdbErrorForStale } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   const genreId = Number(request.nextUrl.searchParams.get("genreId"));
@@ -31,6 +31,15 @@ export async function GET(request: NextRequest) {
       totalPages: response.total_pages
     });
   } catch (error) {
+    if (isRecoverableTmdbErrorForStale(error)) {
+      return NextResponse.json({
+        page,
+        results: [],
+        totalPages: 1,
+        message: "Discover is temporarily busy. Please retry in a moment."
+      });
+    }
+
     const status = error instanceof TmdbFetchError
       ? (error.status ?? 502)
       : 502;
