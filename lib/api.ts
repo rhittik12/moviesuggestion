@@ -97,6 +97,7 @@ const BASE_RETRY_DELAY_MS = 300;
 const MAX_RETRY_DELAY_MS = 3000;
 const OUTBOUND_QUEUE_CODES = new Set(["OUTBOUND_QUEUE_FULL", "OUTBOUND_QUEUE_TIMEOUT"]);
 const detailRetrySoonMarkers = new Map<string, number>();
+const detailRetrySoonCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
   "fetch failed",
@@ -236,6 +237,23 @@ function getRetryDelayMs(attempt: number, retryAfterMs: number | undefined, retr
 
 function markDetailsRetrySoon(movieId: string, ttlMs: number) {
   detailRetrySoonMarkers.set(movieId, Date.now() + ttlMs);
+
+  const existingTimer = detailRetrySoonCleanupTimers.get(movieId);
+
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const cleanupTimer = setTimeout(() => {
+    detailRetrySoonMarkers.delete(movieId);
+    detailRetrySoonCleanupTimers.delete(movieId);
+  }, ttlMs + 25);
+
+  if (typeof cleanupTimer.unref === "function") {
+    cleanupTimer.unref();
+  }
+
+  detailRetrySoonCleanupTimers.set(movieId, cleanupTimer);
 }
 
 function getDetailsRetrySoonRemainingMs(movieId: string) {
@@ -249,6 +267,14 @@ function getDetailsRetrySoonRemainingMs(movieId: string) {
 
   if (remaining <= 0) {
     detailRetrySoonMarkers.delete(movieId);
+
+    const cleanupTimer = detailRetrySoonCleanupTimers.get(movieId);
+
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      detailRetrySoonCleanupTimers.delete(movieId);
+    }
+
     return 0;
   }
 
@@ -261,6 +287,9 @@ export function __setDetailsRetrySoonMarkerForTest(movieId: string, ttlMs: numbe
 
 export function __clearDetailsRetrySoonMarkersForTest() {
   detailRetrySoonMarkers.clear();
+
+  detailRetrySoonCleanupTimers.forEach((timer) => clearTimeout(timer));
+  detailRetrySoonCleanupTimers.clear();
 }
 
 function isNonRetryableDetailsError(error: unknown) {
