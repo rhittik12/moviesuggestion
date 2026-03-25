@@ -1,25 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { TmdbFetchError, searchMovies } from "@/lib/api";
-
-const RETRYABLE_SEARCH_STATUS = new Set([429, 500, 502, 503, 504]);
-
-function isTransientSearchFailure(error: unknown) {
-  if (!(error instanceof TmdbFetchError)) {
-    return false;
-  }
-
-  if (typeof error.status === "number" && RETRYABLE_SEARCH_STATUS.has(error.status)) {
-    return true;
-  }
-
-  return error.code === "OUTBOUND_QUEUE_FULL"
-    || error.code === "OUTBOUND_QUEUE_TIMEOUT"
-    || error.code === "ECONNRESET"
-    || error.code === "ETIMEDOUT"
-    || error.code === "ENOTFOUND"
-    || error.code === "EAI_AGAIN";
-}
+import { TmdbFetchError, isRecoverableTmdbErrorForStale, searchMovies } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("query")?.trim() || "";
@@ -50,7 +31,7 @@ export async function GET(request: NextRequest) {
       totalPages: response.total_pages
     });
   } catch (error) {
-    if (isTransientSearchFailure(error)) {
+    if (isRecoverableTmdbErrorForStale(error)) {
       return NextResponse.json({
         page,
         results: [],
