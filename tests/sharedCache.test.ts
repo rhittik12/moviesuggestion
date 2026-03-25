@@ -30,11 +30,26 @@ describe("shared cache safety", () => {
   });
 
   it("returns null for invalid records without throwing", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "token";
+
+    vi.doMock("@upstash/redis", () => {
+      return {
+        Redis: class {
+          async get() {
+            return { storedAt: "invalid", value: { title: "bad" } };
+          }
+
+          async set() {
+            // no-op for test
+          }
+        }
+      };
+    });
+
     const cacheModule = await import("@/lib/sharedCache");
 
-    await cacheModule.writeSharedCache("good", { title: "x" }, 10_000);
-
-    const result = await cacheModule.readSharedCache("missing", 5_000, 10_000);
+    const result = await cacheModule.readSharedCache("corrupt", 5_000, 10_000);
 
     expect(result).toBeNull();
   });

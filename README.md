@@ -39,9 +39,6 @@ npm install
 
 ```
 TMDB_API_KEY=your_actual_api_key_here
-UPSTASH_REDIS_REST_URL=your_upstash_rest_url
-UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
-PREWARM_SECRET=choose_a_long_random_secret
 ```
 
 3. Start the development server:
@@ -51,6 +48,19 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the app running.
+
+### Optional Environment Variables
+
+These are optional and only needed if you want specific features:
+
+```
+UPSTASH_REDIS_REST_URL=your_upstash_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
+PREWARM_SECRET=choose_a_long_random_secret
+```
+
+- `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`: optional, used for Redis-backed caching. The app runs without Upstash Redis and falls back to in-memory caching.
+- `PREWARM_SECRET`: optional, only required if you use the `/api/prewarm` endpoint and want it protected.
 
 ## Project Structure
 
