@@ -129,7 +129,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
       return {
         eyebrow: "Most Watched",
         title: "Popular Movies",
-        description: "A curated wall of crowd favorites pulled straight from TMDB."
+        description: "A curated wall of crowd favorites."
       };
     }
 
@@ -146,25 +146,7 @@ export function HomeContent({ initialTrendingMovies, initialPopularMovies, genre
 
   return (
     <main className="min-h-screen">
-      <Navbar
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          setError("");
-
-          if (tab === "trending") {
-            setMovies(initialTrendingMovies);
-          }
-
-          if (tab === "popular") {
-            setMovies(initialPopularMovies);
-          }
-
-          if (tab === "genre" && !selectedGenreId && genres[0]) {
-            setSelectedGenreId(genres[0].id);
-          }
-        }}
-      />
+      <Navbar />
 
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-hero-gradient shadow-glow transition duration-500">

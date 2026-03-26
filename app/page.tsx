@@ -1,28 +1,8 @@
-import { HomeContent } from "@/components/HomeContent";
+import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
-import { TmdbFetchError, hasTmdbApiKey, getMovieGenres, getPopularMovies, getTrendingMovies } from "@/lib/api";
+import { hasTmdbApiKey } from "@/lib/api";
 
-function HomeUnavailable({ message }: { message: string }) {
-  return (
-    <main className="min-h-screen">
-      <Navbar />
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-hero-gradient px-6 py-10 sm:px-10 sm:py-14">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-highlight">TMDB Unavailable</p>
-          <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight text-white sm:text-5xl">
-            We could not load movies from TMDB right now.
-          </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-7 text-white/70 sm:text-base">{message}</p>
-          <div className="mt-8 rounded-3xl border border-white/10 bg-black/25 p-5 text-sm text-white/75">
-            If your API key is correct, this is usually a temporary network, VPN, proxy, firewall, or TMDB outage issue.
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-export default async function HomePage() {
+export default function HomePage() {
   if (!hasTmdbApiKey()) {
     return (
       <main className="min-h-screen">
@@ -46,25 +26,40 @@ export default async function HomePage() {
     );
   }
 
-  try {
-    const [trendingResponse, popularResponse, genres] = await Promise.all([
-      getTrendingMovies(),
-      getPopularMovies(),
-      getMovieGenres()
-    ]);
+  return (
+    <main className="min-h-screen">
+      <Navbar />
+      <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-hero-gradient px-6 py-10 sm:px-10 sm:py-14">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_right,rgba(255,255,255,0.1),transparent_30%)]" />
+          <div className="relative space-y-8">
+            <div className="space-y-4">
+              <h1 className="max-w-2xl text-4xl font-semibold leading-tight text-white sm:text-5xl lg:text-6xl">
+                What to Watch Next?
+              </h1>
+              <p className="max-w-2xl text-sm leading-7 text-white/70 sm:text-base">
+                Discover trending movies right now or explore what everyone&apos;s watching. Filter by genre and find your
+                next favorite film.
+              </p>
+            </div>
 
-    return (
-      <HomeContent
-        initialTrendingMovies={trendingResponse.results}
-        initialPopularMovies={popularResponse.results}
-        genres={genres}
-      />
-    );
-  } catch (error) {
-    const message = error instanceof TmdbFetchError
-      ? error.message
-      : "An unexpected error occurred while loading TMDB data.";
-
-    return <HomeUnavailable message={message} />;
-  }
+            <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+              <Link
+                href="/trending"
+                className="inline-flex items-center justify-center rounded-full bg-highlight px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-highlight/90"
+              >
+                Explore Trending
+              </Link>
+              <Link
+                href="/popular"
+                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-8 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Browse Popular
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }
