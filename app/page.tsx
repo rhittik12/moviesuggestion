@@ -30,7 +30,7 @@ export default function HomePage() {
     <main className="min-h-screen">
       <Navbar />
       <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-hero-gradient px-6 py-10 sm:px-10 sm:py-14">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-hero-gradient px-6 py-10 sm:px-10 sm:py-14">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_right,rgba(255,255,255,0.1),transparent_30%)]" />
           <div className="relative space-y-8">
             <div className="space-y-4">
