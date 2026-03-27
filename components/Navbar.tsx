@@ -26,7 +26,7 @@ export function Navbar() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <Link href="/" className="flex items-center gap-3">
           <span className="rounded-full bg-highlight px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white">
-            Reel
+            Movie
           </span>
           <div>
             <p className="text-sm font-semibold text-white sm:text-base">Movie Suggestion</p>
