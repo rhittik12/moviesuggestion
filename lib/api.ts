@@ -110,7 +110,7 @@ const TRANSIENT_FETCH_MESSAGE_PATTERNS = [
   "undici"
 ];
 
-const DEBUG_MODE = process.env.TMDB_DEBUG === "1";
+const DEBUG_MODE = process.env.TMDB_DEBUG === "0";
 
 function createDebugLog() {
   if (!DEBUG_MODE) {

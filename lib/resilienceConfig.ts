@@ -26,7 +26,7 @@ function parseBoolean(raw: string | undefined, fallback: boolean) {
 }
 
 export const resilienceConfig = {
-  logEnabled: parseBoolean(process.env.TMDB_RESILIENCE_LOGS, true),
+  logEnabled: parseBoolean(process.env.TMDB_RESILIENCE_LOGS, false),
   detailsFreshTtlMs: parseNumberSetting(process.env.TMDB_DETAILS_FRESH_TTL_MS, {
     minimum: 1_000,
     fallback: 30 * 60 * 1_000
