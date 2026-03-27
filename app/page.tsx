@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { hasTmdbApiKey } from "@/lib/api";
+import { SearchExperience } from "@/components/SearchExperience";
 
-export default function HomePage() {
+export default async function HomePage() {
   if (!hasTmdbApiKey()) {
     return (
       <main className="min-h-screen">
@@ -25,7 +26,6 @@ export default function HomePage() {
       </main>
     );
   }
-
   return (
     <main className="min-h-screen">
       <Navbar />
@@ -42,7 +42,6 @@ export default function HomePage() {
                 next favorite film.
               </p>
             </div>
-
             <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
               <Link
                 href="/trending"
@@ -56,6 +55,9 @@ export default function HomePage() {
               >
                 Browse Popular
               </Link>
+            </div>
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+              <SearchExperience genres={[]} showGenreFilter={false} />
             </div>
           </div>
         </section>

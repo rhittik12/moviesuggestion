@@ -12,6 +12,7 @@ import { MovieGridSkeleton } from "./Skeletons";
 
 type SearchExperienceProps = {
   genres: Genre[];
+  showGenreFilter?: boolean;
 };
 
 type ApiResponse = {
@@ -27,7 +28,7 @@ type ApiErrorResponse = {
 
 const DEBOUNCE_MS = 450;
 
-export function SearchExperience({ genres }: SearchExperienceProps) {
+export function SearchExperience({ genres, showGenreFilter = true }: SearchExperienceProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
@@ -130,9 +131,19 @@ export function SearchExperience({ genres }: SearchExperienceProps) {
     <div className="space-y-8">
       <div className="space-y-5">
         <SearchBar value={query} onChange={setQuery} />
-        <GenreFilter genres={genres} selectedGenreId={selectedGenreId} onSelect={(genreId) => { setSelectedGenreId(genreId); setMovies([]); setPage(1); setTotalPages(1); }} />
+        {showGenreFilter ? (
+          <GenreFilter
+            genres={genres}
+            selectedGenreId={selectedGenreId}
+            onSelect={(genreId) => {
+              setSelectedGenreId(genreId);
+              setMovies([]);
+              setPage(1);
+              setTotalPages(1);
+            }}
+          />
+        ) : null}
       </div>
-
       {shouldShowResults ? (
         <section className="space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
