@@ -10,7 +10,12 @@ const outfit = Outfit({
 
 export const metadata: Metadata = {
   title: "Movie Suggestion",
-  description: "A modern TMDB-powered movie recommendation app built with Next.js and Tailwind CSS."
+  description: "A modern movie recommendation app built with Next.js",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico"
+  }
 };
 
 export default function RootLayout({
