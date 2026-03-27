@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
-import { getMovieGenres, hasTmdbApiKey } from "@/lib/api";
+import { hasTmdbApiKey } from "@/lib/api";
 import { SearchExperience } from "@/components/SearchExperience";
 
 export default async function HomePage() {
@@ -26,8 +26,6 @@ export default async function HomePage() {
       </main>
     );
   }
-  const genres = await getMovieGenres();
-
   return (
     <main className="min-h-screen">
       <Navbar />
@@ -59,7 +57,7 @@ export default async function HomePage() {
               </Link>
             </div>
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-              <SearchExperience genres={genres} showGenreFilter={false} />
+              <SearchExperience genres={[]} showGenreFilter={false} />
             </div>
           </div>
         </section>
