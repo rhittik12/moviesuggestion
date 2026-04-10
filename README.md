@@ -2,9 +2,9 @@
 
 # Movie Suggestion
 
-**A resilience-first movie discovery application built with Next.js 15, React 19, and the TMDB API.**
+**A resilience-first movie discovery application built with Next.js 15, React 19.**
 
-Browse trending titles, explore popular movies, search with live debounce, filter by genre, and dive into detailed movie pages with recommendations — all backed by a production-grade resilience layer that keeps the experience responsive even when the upstream provider falters.
+Browse trending titles, explore popular movies, search with live debounce, filter by genre, and dive into detailed movie pages with recommendations all backed by a production-grade resilience layer that keeps the experience responsive even when the upstream provider falters.
 
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
