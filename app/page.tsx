@@ -42,7 +42,7 @@ export default async function HomePage() {
                 next favorite film.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-4">
               <Link
                 href="/trending"
                 className="inline-flex items-center justify-center rounded-full bg-highlight px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-highlight/90"
