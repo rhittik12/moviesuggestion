@@ -16,6 +16,12 @@ Browse trending titles, explore popular movies, search with live debounce, filte
 
 ---
 
+
+https://github.com/user-attachments/assets/9f4debcb-7555-4e09-bbd2-d545a9e35605
+
+
+---
+
 ## Table of Contents
 
 - [Features](#features)
