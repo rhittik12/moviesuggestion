@@ -117,7 +117,7 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
       return movies;
     }
 
-    return movies.filter((movie) => movie.genre_ids.some((id) => selectedGenreIds.includes(id)));
+    return movies.filter((movie) => movie.genre_ids.every((id) => selectedGenreIds.includes(id)));
   }, [debouncedQuery, movies, selectedGenreIds]);
 
   const activeLabel = debouncedQuery
