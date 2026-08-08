@@ -31,7 +31,7 @@ const DEBOUNCE_MS = 450;
 export function SearchExperience({ genres, showGenreFilter = true }: SearchExperienceProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+  const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([]);
   const [movies, setMovies] = useState<Movie[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -50,7 +50,7 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
   useEffect(() => {
     const controller = new AbortController();
     const hasQuery = debouncedQuery.length > 0;
-    const hasGenre = selectedGenreId !== null;
+    const hasGenre = selectedGenreIds.length > 0;
 
     if (!hasQuery && !hasGenre) {
       setMovies([]);
@@ -68,7 +68,7 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
 
         const endpoint = hasQuery
           ? `/api/search?query=${encodeURIComponent(debouncedQuery)}&page=${page}`
-          : `/api/discover?genreId=${selectedGenreId}&page=${page}`;
+          : `/api/discover?genreId=${selectedGenreIds}&page=${page}`;
 
         const response = await fetch(endpoint, {
           signal: controller.signal
@@ -110,21 +110,21 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
     fetchMovies();
 
     return () => controller.abort();
-  }, [debouncedQuery, selectedGenreId, page]);
+  }, [debouncedQuery, selectedGenreIds, page]);
 
   const displayedMovies = useMemo(() => {
-    if (!selectedGenreId || !debouncedQuery) {
+    if (!selectedGenreIds.length || !debouncedQuery) {
       return movies;
     }
 
-    return movies.filter((movie) => movie.genre_ids.includes(selectedGenreId));
-  }, [debouncedQuery, movies, selectedGenreId]);
+    return movies.filter((movie) => movie.genre_ids.some((id) => selectedGenreIds.includes(id)));
+  }, [debouncedQuery, movies, selectedGenreIds]);
 
   const activeLabel = debouncedQuery
     ? `Results for "${debouncedQuery}"`
-    : genres.find((genre) => genre.id === selectedGenreId)?.name || "Selected Genre";
+    : genres.find((genre) => genre.id === selectedGenreIds[0])?.name || "Selected Genre";
 
-  const shouldShowResults = debouncedQuery.length > 0 || selectedGenreId !== null;
+  const shouldShowResults = debouncedQuery.length > 0 || selectedGenreIds.length > 0;
   const canLoadMore = page < totalPages && !loading;
 
   return (
@@ -134,9 +134,15 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
         {showGenreFilter ? (
           <GenreFilter
             genres={genres}
-            selectedGenreId={selectedGenreId}
+            selectedGenreIds={selectedGenreIds}
             onSelect={(genreId) => {
-              setSelectedGenreId(genreId);
+              if (genreId === null) {
+                setSelectedGenreIds([]);
+              } else {
+                setSelectedGenreIds(prev =>
+                  prev.includes(genreId) ? prev.filter(g => g !== genreId) : [...prev, genreId]
+                );
+              }
               setMovies([]);
               setPage(1);
               setTotalPages(1);
@@ -161,7 +167,7 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
               onClick={() => {
                 setQuery("");
                 setDebouncedQuery("");
-                setSelectedGenreId(null);
+                setSelectedGenreIds([]);
                 setMovies([]);
                 setPage(1);
                 setTotalPages(1);
@@ -208,7 +214,7 @@ export function SearchExperience({ genres, showGenreFilter = true }: SearchExper
             </div>
           ) : null}
 
-          {debouncedQuery && selectedGenreId ? (
+          {debouncedQuery && selectedGenreIds.length > 0 ? (
             <p className="text-sm text-white/45">
               Search results are narrowed client-side by the selected genre.
             </p>
