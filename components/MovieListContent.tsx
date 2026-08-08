@@ -32,19 +32,25 @@ function toVisibleMoviesError(response: Response, data: MoviesResponse, fallback
 }
 
 export function MovieListContent({ initialMovies, genres, category }: MovieListContentProps) {
-  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+  const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([]);
   const [movies, setMovies] = useState<Movie[]>(initialMovies);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const hasMounted = useRef(false);
 
-  async function getMoviesByGenre(genreId: number, signal?: AbortSignal) {
+  async function getMoviesByGenre(genreId: number[], signal?: AbortSignal) {
     const response = await fetch(`/api/discover?genreId=${genreId}`, { signal, cache: "no-store" });
     const data = (await response.json()) as MoviesResponse;
 
     toVisibleMoviesError(response, data, `Unable to load ${category} movies by genre.`);
 
     return data.results;
+  }
+
+  function toggleGenre(id: number) {
+    setSelectedGenreIds(prev =>
+      prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]
+    );
   }
 
   useEffect(() => {
@@ -60,8 +66,8 @@ export function MovieListContent({ initialMovies, genres, category }: MovieListC
         setIsLoading(true);
         setError("");
 
-        if (selectedGenreId) {
-          const nextMovies = await getMoviesByGenre(selectedGenreId, controller.signal);
+        if (selectedGenreIds.length > 0) {
+          const nextMovies = await getMoviesByGenre(selectedGenreIds, controller.signal);
           setMovies(nextMovies);
         } else {
           setMovies(initialMovies);
@@ -80,11 +86,15 @@ export function MovieListContent({ initialMovies, genres, category }: MovieListC
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGenreId, initialMovies, category]);
+  }, [selectedGenreIds, initialMovies, category]);
 
   const browseCopy = useMemo(() => {
-    if (selectedGenreId) {
-      const genreName = genres.find((genre) => genre.id === selectedGenreId)?.name || "Genre";
+    if (selectedGenreIds.length > 0) {
+      const names = selectedGenreIds
+        .map((id) => genres.find((genre) => genre.id === id)?.name)
+        .filter(Boolean);
+      const genreName = names.length > 0 ? names.join(", ") : "Genre";
+
       return {
         eyebrow: "Browse By Genre",
         title: genreName,
@@ -105,8 +115,7 @@ export function MovieListContent({ initialMovies, genres, category }: MovieListC
       title: "Popular Movies",
       description: "A curated wall of crowd favorites."
     };
-  }, [selectedGenreId, category, genres]);
-
+  }, [selectedGenreIds, category, genres]);
   return (
     <main className="min-h-screen">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -121,9 +130,13 @@ export function MovieListContent({ initialMovies, genres, category }: MovieListC
             <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 sm:p-5">
               <GenreFilter
                 genres={genres}
-                selectedGenreId={selectedGenreId}
+                selectedGenreIds={selectedGenreIds}
                 onSelect={(genreId) => {
-                  setSelectedGenreId(genreId);
+                  if (genreId === null) {
+                    setSelectedGenreIds([]);
+                  } else {
+                    toggleGenre(genreId);
+                  }
                   setError("");
                 }}
               />

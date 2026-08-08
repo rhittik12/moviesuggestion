@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { TmdbFetchError, discoverMoviesByGenre, isRecoverableTmdbErrorForStale } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
-  const genreId = Number(request.nextUrl.searchParams.get("genreId"));
+  const genreId = request.nextUrl.searchParams.get("genreId");
   const page = Number(request.nextUrl.searchParams.get("page") || "1");
 
   if (!Number.isInteger(page) || page < 1 || page > 500) {
@@ -18,7 +18,10 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (!Number.isInteger(genreId) || genreId < 1) {
+  const genreIds = genreId.split(",");
+  const allValid = genreIds.every((id) => Number.isInteger(Number(id)) && Number(id) > 0);
+
+  if (!allValid) {
     return NextResponse.json({ message: "Invalid genreId value." }, { status: 400 });
   }
 

@@ -762,7 +762,7 @@ export async function getMovieGenres() {
   return response.data.genres;
 }
 
-export async function discoverMoviesByGenre(genreId: number, page = 1) {
+export async function discoverMoviesByGenre(genreId: string, page = 1) {
   const response = await tmdbFetchWithResilience<PaginatedResponse<Movie>>(
     "/discover/movie",
     {
