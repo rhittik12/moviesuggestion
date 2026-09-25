@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 
+import { SoftAuroraBackground } from "@/components/SoftAuroraBackground";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -26,6 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body className={`${outfit.variable} bg-canvas font-sans text-white antialiased`}>
+        <SoftAuroraBackground />
         {children}
       </body>
     </html>
