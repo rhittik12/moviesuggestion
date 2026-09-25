@@ -44,13 +44,13 @@ export function Navbar() {
                 href={tab.href}
                 className={`relative rounded-full px-4 py-2 text-sm transition duration-300 ${
                   isActive
-                    ? "bg-white/10 text-white shadow-[0_0_24px_rgba(229,9,20,0.25)]"
+                    ? "gloss-button"
                     : "text-white/70 hover:bg-white/5 hover:text-white"
                 }`}
               >
                 {tab.label}
                 <span
-                  className={`absolute inset-x-4 -bottom-1 h-0.5 rounded-full bg-highlight transition-all duration-300 ${
+                    className={`absolute inset-x-4 -bottom-1 h-0.5 rounded-full bg-[#2a2320]/40 transition-all duration-300 ${
                     isActive ? "opacity-100" : "opacity-0"
                   }`}
                 />

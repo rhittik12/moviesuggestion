@@ -45,7 +45,7 @@ export default async function HomePage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-4">
               <Link
                 href="/trending"
-                className="inline-flex items-center justify-center rounded-full bg-highlight px-8 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-highlight/90"
+                className="gloss-button inline-flex items-center justify-center rounded-full px-8 py-3 text-sm font-semibold transition"
               >
                 Explore Trending
               </Link>
