@@ -16,6 +16,46 @@ body {
   font-family: var(--font-outfit), sans-serif;
 }
 
+@keyframes gloss-button-drift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.gloss-button {
+  position: relative;
+  overflow: hidden;
+  border-color: transparent;
+  color: #2a2320;
+  background: linear-gradient(115deg, #d9c6c2 0%, #b7a8c4 22%, #e8d2b8 40%, #c9a8ae 58%, #a99bbd 76%, #dcc4c0 100%);
+  background-size: 220% 220%;
+  animation: gloss-button-drift 6s ease-in-out infinite;
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.25);
+}
+
+.gloss-button::before {
+  position: absolute;
+  inset: 0.25rem 0.75rem auto;
+  height: 50%;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.25);
+  filter: blur(3px);
+  content: "";
+  pointer-events: none;
+}
+
+.gloss-button:hover,
+.gloss-button:focus-visible,
+.gloss-button:active {
+  border-color: transparent;
+  color: #2a2320;
+  background-position: 100% 50%;
+  background-color: transparent;
+}
+
 * {
   border-color: rgba(255, 255, 255, 0.08);
 }

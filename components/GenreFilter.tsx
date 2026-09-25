@@ -15,8 +15,8 @@ export function GenreFilter({ genres, selectedGenreIds, onSelect }: GenreFilterP
         type="button"
         onClick={() => onSelect(null)}
         className={`rounded-full border px-4 py-2 text-sm transition ${
-          selectedGenreIds.length === 0     
-            ? "border-highlight bg-highlight text-white"
+          selectedGenreIds.length === 0
+            ? "gloss-button"
             : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white"
         }`}
       >
@@ -30,7 +30,7 @@ export function GenreFilter({ genres, selectedGenreIds, onSelect }: GenreFilterP
           onClick={() => onSelect(genre.id)}
           className={`rounded-full border px-4 py-2 text-sm transition ${
             selectedGenreIds.includes(genre.id)
-              ? "border-highlight bg-highlight text-white"
+              ? "gloss-button"
               : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white"
           }`}
         >
