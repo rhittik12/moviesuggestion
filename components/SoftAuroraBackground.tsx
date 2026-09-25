@@ -101,18 +101,49 @@ export function SoftAuroraBackground() {
 
     const startTime = performance.now();
     let animationFrameId = 0;
+    let scrollTimeoutId = 0;
+    let isScrolling = false;
+
     const render = (time: number) => {
+      if (isScrolling || document.hidden) return;
+
       gl.uniform1f(timeLocation, (time - startTime) / 1000);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       animationFrameId = requestAnimationFrame(render);
     };
 
+    const resumeRendering = () => {
+      isScrolling = false;
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    const handleScroll = () => {
+      isScrolling = true;
+      cancelAnimationFrame(animationFrameId);
+      window.clearTimeout(scrollTimeoutId);
+      scrollTimeoutId = window.setTimeout(resumeRendering, 120);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animationFrameId);
+      } else if (!isScrolling) {
+        animationFrameId = requestAnimationFrame(render);
+      }
+    };
+
     window.addEventListener("resize", resize);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     resize();
     animationFrameId = requestAnimationFrame(render);
 
     return () => {
       window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearTimeout(scrollTimeoutId);
       cancelAnimationFrame(animationFrameId);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
